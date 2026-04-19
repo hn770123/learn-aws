@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS SAA-C03 模擬試験</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- コンテナ -->
+    <div id="app" class="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8 transition-all duration-300">
+        <!-- ロード中表示 -->
+        <div id="loading" class="text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p class="mt-4 text-gray-600">問題を読み込み中...</p>
+        </div>
+
+        <!-- 試験開始画面 -->
+        <div id="start-screen" class="hidden text-center">
+            <h1 class="text-3xl font-bold text-gray-800 mb-6">AWS SAA-C03 模擬試験</h1>
+            <p class="text-gray-600 mb-8">全30問の中からランダムに10問出題されます。<br>1問ずつ回答し、最後に正解率を表示します。</p>
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full transition duration-300 shadow-lg">
+                試験を開始する
+            </button>
+        </div>
+
+        <!-- クイズ画面 -->
+        <div id="quiz-screen" class="hidden">
+            <!-- プログレスバー -->
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-6">
+                <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+
+            <div class="flex justify-between items-center mb-4 text-sm text-gray-500">
+                <span id="question-number">第 1 問 / 10</span>
+                <span id="topic-label" class="bg-blue-100 text-blue-800 px-2 py-1 rounded">トピック</span>
+            </div>
+
+            <h2 id="problem-text" class="text-lg font-semibold text-gray-800 mb-6 leading-relaxed">
+                問題文がここに表示されます。
+            </h2>
+
+            <div id="options-container" class="space-y-3">
+                <!-- 選択肢が動的に追加される -->
+            </div>
+
+            <!-- 解説セクション -->
+            <div id="explanation-container" class="hidden mt-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+                <div id="result-badge" class="inline-block px-3 py-1 rounded-full text-sm font-bold mb-3">
+                    正解 / 不正解
+                </div>
+                <div class="text-sm font-bold text-gray-500 mb-1">正解: <span id="correct-answer">B</span></div>
+                <div id="explanation-text" class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                    解説がここに表示されます。
+                </div>
+                <button id="next-btn" class="mt-6 w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 px-6 rounded-xl transition duration-300">
+                    次へ進む
+                </button>
+            </div>
+        </div>
+
+        <!-- リザルト画面 -->
+        <div id="result-screen" class="hidden text-center">
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">試験結果</h2>
+            <div class="text-6xl font-bold text-blue-600 mb-4" id="final-score">80%</div>
+            <p class="text-gray-600 mb-8" id="score-details">10問中 8問正解しました。</p>
+            <button id="restart-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full transition duration-300 shadow-lg">
+                もう一度挑戦する
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * AWS SAA-C03 模擬試験アプリケーションのメインロジック
+         *
+         * @description Markdownから変換されたJSONデータを読み込み、ランダムに10問出題します。
+         * 1問ごとに解答と解説を表示し、最後に正解率を算出します。
+         */
+
+        // --- アプリケーションの状態管理 ---
+        let allQuestions = [];      // 全問題データ（questions.jsonから読み込み）
+        let currentQuestions = [];  // 今回の試験で出題される10問
+        let currentIndex = 0;       // 現在の問題番号（0ベース）
+        let score = 0;              // 正解数
+        let selectedAnswer = null;  // 現在の問題で選択された回答
+
+        // --- DOM要素の取得 ---
+        const loadingEl = document.getElementById('loading');
+        const startScreenEl = document.getElementById('start-screen');
+        const quizScreenEl = document.getElementById('quiz-screen');
+        const resultScreenEl = document.getElementById('result-screen');
+        const optionsContainerEl = document.getElementById('options-container');
+        const explanationContainerEl = document.getElementById('explanation-container');
+
+        /**
+         * アプリケーションの初期化
+         * 外部JSONファイルを読み込み、開始画面を表示します。
+         */
+        async function init() {
+            try {
+                const response = await fetch('questions.json');
+                allQuestions = await response.json();
+                loadingEl.classList.add('hidden');
+                startScreenEl.classList.remove('hidden');
+            } catch (error) {
+                console.error('データの読み込みに失敗しました:', error);
+                loadingEl.innerHTML = '<p class="text-red-500">問題の読み込みに失敗しました。ページを再読み込みしてください。</p>';
+            }
+        }
+
+        /**
+         * 試験を開始する
+         * 全問題からランダムに10問を抽出し、クイズ画面に切り替えます。
+         */
+        function startQuiz() {
+            // 全問題リストをシャッフルして先頭10問を取得
+            currentQuestions = [...allQuestions]
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 10);
+
+            currentIndex = 0;
+            score = 0;
+
+            startScreenEl.classList.add('hidden');
+            resultScreenEl.classList.add('hidden');
+            quizScreenEl.classList.remove('hidden');
+
+            showQuestion();
+        }
+
+        /**
+         * 現在の問題を表示する
+         * UIのリセットを行い、問題文と選択肢を動的に生成します。
+         */
+        function showQuestion() {
+            const question = currentQuestions[currentIndex];
+            selectedAnswer = null;
+
+            // UIリセット
+            explanationContainerEl.classList.add('hidden');
+            optionsContainerEl.innerHTML = '';
+
+            // プログレス
+            const progress = (currentIndex / currentQuestions.length) * 100;
+            document.getElementById('progress-bar').style.width = `${progress}%`;
+            document.getElementById('question-number').textContent = `第 ${currentIndex + 1} 問 / ${currentQuestions.length}`;
+
+            // 内容セット
+            document.getElementById('topic-label').textContent = question.topic;
+            document.getElementById('problem-text').textContent = question.problem;
+
+            // 選択肢作成
+            question.options.forEach(option => {
+                const button = document.createElement('button');
+                button.className = 'w-full text-left p-4 rounded-xl border-2 border-gray-100 hover:border-blue-400 hover:bg-blue-50 transition duration-200 flex items-start';
+                button.innerHTML = `
+                    <span class="font-bold text-blue-600 mr-3">${option.id}.</span>
+                    <span class="text-gray-700">${option.text}</span>
+                `;
+                button.onclick = () => selectOption(option.id, button);
+                optionsContainerEl.appendChild(button);
+            });
+        }
+
+        /**
+         * 選択肢がクリックされた時の処理
+         * 正誤判定を行い、解説を表示します。
+         *
+         * @param {string} optionId 選択された選択肢のID (A, B, C, D)
+         * @param {HTMLElement} buttonEl クリックされたボタン要素
+         */
+        function selectOption(optionId, buttonEl) {
+            if (selectedAnswer !== null) return; // すでに回答済みなら何もしない
+
+            selectedAnswer = optionId;
+            const question = currentQuestions[currentIndex];
+            const isCorrect = optionId === question.answer;
+
+            if (isCorrect) {
+                score++;
+                buttonEl.classList.add('border-green-500', 'bg-green-50');
+                showExplanation(true);
+            } else {
+                buttonEl.classList.add('border-red-500', 'bg-red-50');
+                // 不正解の場合は、正解の選択肢も強調表示する
+                Array.from(optionsContainerEl.children).forEach(btn => {
+                    const id = btn.querySelector('.font-bold').textContent.replace('.', '');
+                    if (id === question.answer) {
+                        btn.classList.add('border-green-500', 'bg-green-50');
+                    }
+                });
+                showExplanation(false);
+            }
+        }
+
+        /**
+         * 正解・不正解のラベルと解説を表示する
+         *
+         * @param {boolean} isCorrect 正解したかどうか
+         */
+        function showExplanation(isCorrect) {
+            const question = currentQuestions[currentIndex];
+            const badge = document.getElementById('result-badge');
+
+            if (isCorrect) {
+                badge.textContent = '正解';
+                badge.className = 'inline-block px-3 py-1 rounded-full text-sm font-bold mb-3 bg-green-100 text-green-700';
+            } else {
+                badge.textContent = '不正解';
+                badge.className = 'inline-block px-3 py-1 rounded-full text-sm font-bold mb-3 bg-red-100 text-red-700';
+            }
+
+            document.getElementById('correct-answer').textContent = question.answer;
+            document.getElementById('explanation-text').textContent = question.explanation;
+            explanationContainerEl.classList.remove('hidden');
+
+            // スクロールダウン
+            explanationContainerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        /**
+         * 「次へ進む」ボタンが押された時の処理
+         * 次の問題を表示するか、全問終了していれば結果画面を表示します。
+         */
+        function nextQuestion() {
+            currentIndex++;
+            if (currentIndex < currentQuestions.length) {
+                showQuestion();
+            } else {
+                showResult();
+            }
+        }
+
+        /**
+         * 最終結果を表示する
+         * 正解率を計算し、リザルト画面を表示します。
+         */
+        function showResult() {
+            quizScreenEl.classList.add('hidden');
+            resultScreenEl.classList.remove('hidden');
+
+            const percentage = (score / currentQuestions.length) * 100;
+            document.getElementById('final-score').textContent = `${percentage}%`;
+            document.getElementById('score-details').textContent = `${currentQuestions.length}問中 ${score}問正解しました。`;
+
+            // プログレスバーを100%に
+            document.getElementById('progress-bar').style.width = '100%';
+        }
+
+        // --- イベントリスナー ---
+        document.getElementById('start-btn').addEventListener('click', startQuiz);
+        document.getElementById('next-btn').addEventListener('click', nextQuestion);
+        document.getElementById('restart-btn').addEventListener('click', startQuiz);
+
+        // 実行
+        init();
+    </script>
+</body>
+</html>
