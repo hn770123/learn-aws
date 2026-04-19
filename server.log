@@ -1,0 +1,2 @@
+127.0.0.1 - - [19/Apr/2026 15:14:14] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [19/Apr/2026 15:14:14] "GET /questions.json HTTP/1.1" 200 -
